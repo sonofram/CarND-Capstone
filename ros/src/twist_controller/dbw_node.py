@@ -4,7 +4,8 @@ import rospy
 from std_msgs.msg import Bool
 from dbw_mkz_msgs.msg import ThrottleCmd, SteeringCmd, BrakeCmd, SteeringReport
 from geometry_msgs.msg import TwistStamped
-
+import os
+import csv
 from twist_controller import Controller
 
 '''
@@ -23,6 +24,8 @@ You are free to use them or build your own.
 Once you have the proposed throttle, brake, and steer values, publish it on the various publishers
 that we have created in the `__init__` function.
 '''
+
+DUMP = True #True
 
 class DBWNode(object):
     def __init__(self):
@@ -50,6 +53,8 @@ class DBWNode(object):
         steer_ratio = rospy.get_param('~steer_ratio', 14.8)
         max_lat_accel = rospy.get_param('~max_lat_accel', 3.)
         max_steer_angle = rospy.get_param('~max_steer_angle', 8.)
+        max_throttle_percentage = rospy.get_param('~max_throttle_percentage', 0.1)
+        max_braking_percentage = rospy.get_param('~max_braking_percentage', -0.1)
 
         #################PUBLISH################################
         self.steer_pub = rospy.Publisher('/vehicle/steering_cmd',
@@ -72,7 +77,9 @@ class DBWNode(object):
                                      steer_ratio=steer_ratio,
                                      max_lat_accel=max_lat_accel,
                                      max_steer_angle=max_steer_angle,
-                                     min_velocity=0.0)
+                                     min_velocity=0.0,
+                                     max_throttle_percentage=max_throttle_percentage,
+                                     max_braking_percentage=max_braking_percentage)
 
         ##################SUBSCRIBE##############################
         #Check when manual control taken over.
@@ -84,6 +91,12 @@ class DBWNode(object):
         rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_cb)
 
         rospy.loginfo("dbw_node: Publisher and Subscriber initiated")
+
+        self.dbw_data = []
+
+        if DUMP is True:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            self.dbwfile = os.path.join(base_path, 'dbw_node.csv')
 
         self.loop()
 
@@ -99,9 +112,36 @@ class DBWNode(object):
                 self.required_vel_angular,
                 self.current_vel_linear)
 
+            if DUMP is True:
+                self.dbw_data.append({
+                    'dbw_enabled': self.dbw_enabled,
+                    'current_vel_linear': self.current_vel_linear,
+                    'required_vel_linear': self.required_vel_linear,
+                    'required_vel_angular': self.required_vel_angular,
+                    'throttle': throttle,
+                    'brake': brake,
+                    'steer': steer})
+
             rospy.loginfo("dbw_node.loop: throttle, brake, streer"+str(throttle)+' , '+str(brake)+' , '+str(steer))
             self.publish(throttle, brake, steer)
             rate.sleep()
+
+
+        rospy.loginfo('dbw_node.loop dwb_data array length: '+str(len(self.dbw_data)))
+        if DUMP is True:
+            fieldnames = ['dbw_enabled',
+                          'current_vel_linear',
+                          'required_vel_linear',
+                          'required_vel_angular',
+                          'throttle',
+                          'brake',
+                          'steer']
+
+            with open(self.dbwfile, 'w') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(self.dbw_data)
+
 
     def publish(self, throttle, brake, steer):
         tcmd = ThrottleCmd()
