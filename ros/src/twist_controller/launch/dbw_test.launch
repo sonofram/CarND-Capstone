@@ -3,4 +3,6 @@
   $(find styx)../../../data/dbw_test.rosbag.bag /vehicle/throttle_cmd:=/actual/throttle_cmd /vehicle/steering_cmd:=/actual/steering_cmd /vehicle/brake_cmd:=/actual/brake_cmd" required="true"/>
   <node pkg="twist_controller" type="dbw_test.py" name="dbw_test"/>
   <include file="$(find twist_controller)/launch/dbw.launch"/>
+  <!--node name="base_point_current_pose" pkg="rqt_plot" type="rqt_plot" args="/base_waypoints/pose/pose/points /current_pose/pose/position" required="true"/-->
+  <node pkg="twist_controller" type="plot.py" name="plot_node"/>
 </launch>

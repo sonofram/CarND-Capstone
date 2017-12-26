@@ -17,9 +17,7 @@ Once you have created dbw_node, you will update this node to use the status of t
 Please note that our simulator also provides the exact location of traffic lights and their
 current status in `/vehicle/traffic_lights` message. You can use this message to build this node
 as well as to verify your TL classifier.
-
 ASSUMPTION: 
-
 '''
 
 # The initial value of waypoints we will publish every time. It will be doubled
@@ -27,12 +25,11 @@ ASSUMPTION:
 LOOKAHEAD_WPS_INIT = 200
 MAX_DECEL = 1.0
 MAX_ACCEL = 1.0
-LOOP = False
+LOOP = True #False
 # rate frequency the loops spin in ROS
 PUBLISH_RATE = 2
 
 class WaypointUpdater(object):
-
     def __init__(self):
         rospy.init_node('waypoint_updater')
 
@@ -99,7 +96,6 @@ class WaypointUpdater(object):
 	'''
 	To execute this step, make sure self.base_waypoints_list and 
 	self.current_pose are not None.
-
 	update the current waypoints list self.current_waypoints_list
 	'''
 
@@ -212,22 +208,17 @@ class WaypointUpdater(object):
         lane.header.seq = self.msg_seq_num
         lane.waypoints = waypoints_list
         self.msg_seq_num += 1
-        rospy.logwarn('####################publish lane###########')
         self.final_waypoints_pub.publish(lane)
-
 
     def accelerate(self, acceleration=MAX_ACCEL):
 	'''
 	This function is used in acceleration.
-
 	We will acclerate the velocities for self.current_waypoints_list base on
 	the velocity of the first front waypoints of the car and its current
 	velocity. Meanwhile, the updated velocities will be smaller than 
 	self.max_velocity which is abtained from /waypoint_loader/velocity.
-
 	Formular: set acceleration = MAX_ACCEL < 10 m/s**2
 		  v(t)**2 = 2*a*S(t) + v(0)**2
-
 	Note: /dbw_node/accel_limit: 1.0????
 	'''
 	rospy.logwarn('Accelerate is used')
@@ -248,20 +239,16 @@ class WaypointUpdater(object):
     def decelerate(self, stop_index):
 	'''
 	This function is used in deceleration.
-
 	Assumption: self.current_waypoints_list has been updated and currently
 		    self.stop_line_index >= 0 (Red/Yellow light detected)
 	
 	In this case, we decelerate the car based on the velocity of the first 
 	waypoint in front of the car.
-
 	Fact: in general, the maximal deceleration of a car is in 6 to 8 m/s**2
 	the average deceleration locates in 3-4 m/s**2
 	we control the deceleration so that it is in 1.5-2.5 m/s**2 in order to 
 	produce a better experience.
-
 	:param stop_index: a positive integer between 0 and self.LOOKAHEAD_WPS-1.
-
 	Note: /dbw_node/accel_limit: 1.0
 	      /dbw_node/decel_limit: -5.0
 	'''

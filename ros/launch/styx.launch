@@ -20,4 +20,8 @@
 
     <!--Traffic Light Locations and Camera Config -->
     <param name="traffic_light_config" textfile="$(find tl_detector)/sim_traffic_light_config.yaml" />
+    <!--RQT PLOt -->
+    <!--node name="base_point_current_pose" pkg="rqt_plot" type="rqt_plot" args="/base_waypoints/pose/pose/points/x:y /current_pose/pose/position/x:y" required="true"/-->
+    <!--Matplolib real-time-->
+    <!--node pkg="twist_controller" type="plot.py" name="plot_node"/-->
 </launch>
