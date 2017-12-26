@@ -27,7 +27,7 @@ Once you have the proposed throttle, brake, and steer values, publish it on the 
 that we have created in the `__init__` function.
 '''
 
-DUMP = False #True #True
+DUMP = True #True
 
 class DBWNode(object):
     def __init__(self):
@@ -81,13 +81,15 @@ class DBWNode(object):
         self.final_waypoints = None
         self.current_pose = None
         self.dx_c = self.dy_c = self.theta_c = None
+        self.steering_feedback = 0.0
 
 
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_enabled_cb, queue_size=1)
         rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_cb, queue_size=1)
         rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb, queue_size=1)
         rospy.Subscriber('/final_waypoints', Lane, self.final_waypoints_cb)
-        rospy.Subscriber('/current_pose', PoseStamped, self.current_pose_cb)
+        rospy.Subscriber('/current_pose', PoseStamped, self.current_pose_cb,queue_size=1)
+        rospy.Subscriber('/vehicle/steering_report', SteeringReport, self.st_report_cb,queue_size=1)
 
         rospy.loginfo("DBWNode: Publisher and Subscriber initiated")
 
@@ -126,7 +128,8 @@ class DBWNode(object):
             throttle, brake, steering = self.controller.control(
                                             linear_setpoint,
                                             angular_setpoint,
-                                            linear_current)
+                                            linear_current,
+                                            self.steering_feedback)
 
             #if self.dbw_enabled:
             self.publish(throttle, brake, steering)
@@ -149,9 +152,10 @@ class DBWNode(object):
                     'steer': steering,
                     'dx_c': self.dx_c,
                     'dy_c': self.dy_c,
-                    'theta_c': self.theta_c})
+                    'theta_c': self.theta_c,
+                    'steering_feedback': self.steering_feedback})
 
-            #rospy.logwarn("DBWNode.loop: throttle, brake, streer"+str(throttle)+' , '+str(brake)+' , '+str(steering))
+            rospy.loginfo("DBWNode.loop: throttle, brake, streer"+str(throttle)+' , '+str(brake)+' , '+str(steering))
 
             rate.sleep()
 
@@ -169,7 +173,8 @@ class DBWNode(object):
                         'steer',
                         'dx_c',
                         'dy_c',
-                        'theta_c']
+                        'theta_c',
+                        'steering_feedback']
 
             with open(self.dbwfile, 'w') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -224,6 +229,10 @@ class DBWNode(object):
         self.last_required_vel_angular = self.required_vel_angular
         self.count_required_vel_angular += 1
     '''
+
+    def st_report_cb(self, msg):
+        self.steering_feedback = msg.steering_wheel_angle
+        rospy.logwarn("##################STEER FEEDBACK: "+str(self.steering_feedback))
 
     def twist_cmd_cb(self, msg):
         self.current_setpoint = msg
