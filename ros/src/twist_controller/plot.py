@@ -104,7 +104,7 @@ class Plot(object):
 
         x = list([self.dbw_data[i].get("dx")/1000.0 for i in range(len(self.dbw_data))])
         y = list([self.dbw_data[i].get("dy")/1000.0 for i in range(len(self.dbw_data))])
-        plt.plot(x, y, 'r>')
+        plt.plot(x, y, 'r<')
         #fig.canvas.draw()
 
     def waypoints_cb(self, waypoints):

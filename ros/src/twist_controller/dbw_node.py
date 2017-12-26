@@ -27,7 +27,7 @@ Once you have the proposed throttle, brake, and steer values, publish it on the 
 that we have created in the `__init__` function.
 '''
 
-DUMP = True #True
+DUMP = False #True #True
 
 class DBWNode(object):
     def __init__(self):
@@ -56,7 +56,7 @@ class DBWNode(object):
         self.brake_pub = rospy.Publisher('/vehicle/brake_cmd',
                                          BrakeCmd, queue_size=1)
 
-        self.sampling_rate = 10
+        self.sampling_rate = 50.0
 
         params = {
             'vehicle_mass'      : vehicle_mass,
@@ -80,6 +80,7 @@ class DBWNode(object):
         self.current_velocity = None
         self.final_waypoints = None
         self.current_pose = None
+        self.dx_c = self.dy_c = self.theta_c = None
 
 
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_enabled_cb, queue_size=1)
@@ -100,49 +101,62 @@ class DBWNode(object):
         self.loop()
 
     def loop(self):
+
         rate = rospy.Rate(self.sampling_rate) # Was 50Hz
+
         while not rospy.is_shutdown():
-            if (self.final_waypoints is not None) and (self.current_pose is not None) \
-            and (self.current_velocity is not None) and (self.current_setpoint is not None):
+            if  self.current_velocity is None \
+                or self.current_setpoint is None \
+                or not self.dbw_enabled:
 
-                current_location = self.current_pose.pose.position
+                #rospy.logwarn('DBWNode.loop: ############Not Initated yet#########')
 
-                #twist_cmd output required linear and angular velocity
-                linear_setpoint = self.current_setpoint.twist.linear.x
-                angular_setpoint = self.current_setpoint.twist.angular.z
+                continue
 
-                #current velocity
-                linear_current = self.current_velocity.twist.linear.x
-                angular_current = self.current_velocity.twist.angular.z
+            #current_location = self.current_pose.pose.position if self.current_pose.pose.position is not None else None;
 
-                throttle, brake, steering = self.controller.control(
-                    linear_setpoint, angular_setpoint, linear_current,
-                    angular_current, self.dbw_enabled, current_location)
+            #twist_cmd output required linear and angular velocity
+            linear_setpoint = self.current_setpoint.twist.linear.x
+            angular_setpoint = self.current_setpoint.twist.angular.z
 
-                if self.dbw_enabled:
-                    self.publish(throttle, brake, steering)
+            #current velocity
+            linear_current = self.current_velocity.twist.linear.x
+            angular_current = self.current_velocity.twist.angular.z
+
+            throttle, brake, steering = self.controller.control(
+                                            linear_setpoint,
+                                            angular_setpoint,
+                                            linear_current)
+
+            #if self.dbw_enabled:
+            self.publish(throttle, brake, steering)
 
 
-                if DUMP is True:
-                    self.dbw_data.append({
-                        'dbw_enabled': self.dbw_enabled,
-                        'linear_current': linear_current,
-                        'angular_current': angular_current,
-                        'linear_required': linear_setpoint,
-                        'angular_required': angular_setpoint,
-                        'throttle': throttle,
-                        'brake': brake,
-                        'steer': steering,
-                        'dx_c': current_location.x,
-                        'dy_c': current_location.y,
-                        'theta_c': current_location.z})
+            if DUMP is True:
+                if self.current_pose is not None:
+                    self.dx_c = self.current_pose.pose.position.x
+                    self.dy_c = self.current_pose.pose.position.y
+                    self.theta_c = self.current_pose.pose.position.z
 
-                rospy.loginfo("DBWNode.loop: throttle, brake, streer"+str(throttle)+' , '+str(brake)+' , '+str(steering))
+                self.dbw_data.append({
+                    'dbw_enabled': self.dbw_enabled,
+                    'linear_current': linear_current,
+                    'angular_current': angular_current,
+                    'linear_required': linear_setpoint,
+                    'angular_required': angular_setpoint,
+                    'throttle': throttle,
+                    'brake': brake,
+                    'steer': steering,
+                    'dx_c': self.dx_c,
+                    'dy_c': self.dy_c,
+                    'theta_c': self.theta_c})
+
+            #rospy.logwarn("DBWNode.loop: throttle, brake, streer"+str(throttle)+' , '+str(brake)+' , '+str(steering))
 
             rate.sleep()
 
 
-        rospy.loginfo('DBWNode.loop dwb_data array length: '+str(len(self.dbw_data)))
+        #rospy.loginfo('DBWNode.loop dwb_data array length: '+str(len(self.dbw_data)))
 
         if DUMP is True:
             fieldnames = ['dbw_enabled',
@@ -185,8 +199,10 @@ class DBWNode(object):
     def dbw_enabled_cb(self, msg):
         # check if drive-by-wire is enabled (i.e. the car is not in manual mode)
         self.dbw_enabled = msg.data
-        rospy.loginfo('DBWNode.dbw_enabled_cb: dbw_enabled = ' + str(self.dbw_enabled))
+        rospy.loginfo('TwistController: dbw_enabled = ' + str(self.dbw_enabled))
 
+        if not self.dbw_enabled:
+            self.controller.reset()
 
     '''
     def current_velocity_cb(self, msg):
