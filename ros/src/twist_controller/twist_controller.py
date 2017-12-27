@@ -14,9 +14,9 @@ ONE_MPH = 0.44704
 #PID_VEL_I = 0.0005
 #PID_VEL_D = 0.07
 
-PID_VEL_P = 0.8
+PID_VEL_P = 5.0
 PID_VEL_I = 0.05
-PID_VEL_D = 0.03
+PID_VEL_D = 1.0
 
 #PID_ACC_P = 0.4
 #PID_ACC_I = 0.05
@@ -24,11 +24,11 @@ PID_VEL_D = 0.03
 
 PID_ACC_P = 0.8
 PID_ACC_I = 0.05
-PID_ACC_D = 0.05
+PID_ACC_D = 0.50
 
 PID_STR_P = 0.8
 PID_STR_I = 0.05
-PID_STR_D = 0.05
+PID_STR_D = 0.50
 
 
 class Controller(object):
@@ -77,7 +77,7 @@ class Controller(object):
 
 
         # second controller to get throttle signal between 0 and 1
-        self.accel_pid = PID(PID_ACC_P, PID_ACC_I, PID_ACC_D, 0.0, 0.10)
+        self.accel_pid = PID(PID_ACC_P, PID_ACC_I, PID_ACC_D, 0.0, 0.05)
 
         self.last_time = None
         self.last_steering = 0.0
@@ -104,11 +104,8 @@ class Controller(object):
         self.last_time = time
 
 
-        accel_temp =  (self.linear_past_velocity - linear_current_velocity)
-        self.current_accel = self.low_pass_filter_accel.filt(accel_temp)/dt
-        #self.current_accel = self.low_pass_filter_accel.get()
-        #self.current_accel = accel_temp
-
+        accel_temp =  (self.linear_past_velocity - linear_current_velocity)/dt
+        self.current_accel = self.low_pass_filter_accel.filt(accel_temp)
 
         # update
         self.linear_past_velocity = linear_current_velocity
@@ -137,23 +134,14 @@ class Controller(object):
                 else:
                     brake = abs(desired_accel) * self.brake_torque_const
 
-
-        steering = self.yaw_controller.get_steering(linear_velocity_setpoint, angular_velocity_setpoint,
+        angular_velocity = self.low_pass_filter_steer.filt(angular_velocity_setpoint)
+        steering = self.yaw_controller.get_steering(linear_velocity_setpoint, angular_velocity,
                                                                linear_current_velocity)
-
-        steer_error = steering - self.last_steering
-        self.last_steering = steering
-        steering = self.steer_pid.step(steer_error, dt) #self.delta_t)
-        #steering = self.low_pass_filter_steer.filt(steering)
-        #steering = low_pass_filter_steer.get()
 
         #rospy.loginfo('####Controller.control: req velocity, req angular velocity, current velocity '
         #+ str(linear_velocity_setpoint) + ' , ' + str(angular_velocity_setpoint) + ' , ' + str(linear_current_velocity))
         #rospy.loginfo('####Controller.control: desired acceleration, current acceleration, velocity error '+str(desired_accel)+' , '+str(self.current_accel)+' , '+str(linear_velocity_error) )
         #rospy.loginfo('####Controller.control: throttle, brake, steering '+str(throttle)+' , '+str(brake) +' , '+ str(steering))
-
-        #throttle = 0.05
-        #brake = 0.0
 
         return throttle, brake, steering
 
