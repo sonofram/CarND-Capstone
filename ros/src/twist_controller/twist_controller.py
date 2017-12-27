@@ -15,9 +15,9 @@ MAX_V =44.704
 #PID_VEL_I = 0.0005
 #PID_VEL_D = 0.07
 
-PID_VEL_P = 0.9
-PID_VEL_I = 0.05
-PID_VEL_D = 0.3
+PID_VEL_P = 1.0
+PID_VEL_I = 0.01
+PID_VEL_D = 6.0
 
 #PID_ACC_P = 0.4
 #PID_ACC_I = 0.05
@@ -27,9 +27,9 @@ PID_VEL_D = 0.3
 #PID_ACC_I = 0.05
 #PID_ACC_D = 0.50
 
-PID_STR_P = 0.9
-PID_STR_I = 0.05
-PID_STR_D = 0.9
+PID_STR_P = 0.71
+PID_STR_I = 0.00
+PID_STR_D = 6.0
 
 
 class Controller(object):
@@ -66,12 +66,12 @@ class Controller(object):
         self.pid_vel_linear = PID(PID_VEL_P, PID_VEL_I, PID_VEL_D,
                                   self.decel_limit, self.accel_limit)
 
+        #restricting between -0.4 and 0.4 i.e. roughly 25 degrees
+        self.steer_pid = PID(PID_STR_P, PID_STR_I, PID_STR_D, -0.4363 , 0.4363)#-self.max_steer_angle/2, self.max_steer_angle/2)
 
-        self.steer_pid = PID(PID_STR_P, PID_STR_I, PID_STR_D, -self.max_steer_angle/2, self.max_steer_angle/2)
-
-        #self.tau_steer_correction = 0.5
-        #self.ts_steer_correction = self.delta_t
-        #self.low_pass_filter_steer = LowPassFilter(self.tau_steer_correction, self.ts_steer_correction)
+        self.tau_steer_correction = 0.2
+        self.ts_steer_correction = self.delta_t
+        self.low_pass_filter_steer = LowPassFilter(self.tau_steer_correction, self.ts_steer_correction)
 
         self.last_time = None
         self.last_steering = 0.0
@@ -111,8 +111,8 @@ class Controller(object):
                 #if desired_accel < self.accel_limit:
                 #    throttle = self.accel_limit
                 #else:
-                if desired_accel > 0.2:
-                    throttle = 0.2
+                if desired_accel > 0.4: #self.accel_limit:
+                    throttle = 0.4 #self.accel_limit
                 else:
                     throttle = desired_accel
                 brake = 0.0
@@ -132,6 +132,7 @@ class Controller(object):
                                                                    linear_current_velocity)
 
             steering = self.steer_pid.step(steering-steering_feedback, dt)
+            steering = self.low_pass_filter_steer.filt(steering)
 
             return throttle, brake, steering
         else:
