@@ -8,27 +8,28 @@ import numpy as np
 # original Udacity constants
 GAS_DENSITY = 2.858
 ONE_MPH = 0.44704
+MAX_V =44.704
 
 # Tuning parameters for throttle/brake PID controller
 #PID_VEL_P = 0.9
 #PID_VEL_I = 0.0005
 #PID_VEL_D = 0.07
 
-PID_VEL_P = 5.0
+PID_VEL_P = 0.9
 PID_VEL_I = 0.05
-PID_VEL_D = 1.0
+PID_VEL_D = 0.3
 
 #PID_ACC_P = 0.4
 #PID_ACC_I = 0.05
 #PID_ACC_D = 0.0
 
-PID_ACC_P = 0.8
-PID_ACC_I = 0.05
-PID_ACC_D = 0.50
+#PID_ACC_P = 0.8
+#PID_ACC_I = 0.05
+#PID_ACC_D = 0.50
 
-PID_STR_P = 0.8
+PID_STR_P = 0.9
 PID_STR_I = 0.05
-PID_STR_D = 0.50
+PID_STR_D = 0.9
 
 
 class Controller(object):
@@ -56,28 +57,21 @@ class Controller(object):
         self.linear_past_velocity = 0.0
 
         #yaw controller
-        yaw_params = [self.wheel_base, self.steer_ratio, min_speed, self.max_lat_accel, self.max_steer_angle]
+        yaw_params = [self.wheel_base, self.steer_ratio, min_speed,
+                      self.max_lat_accel,
+                      self.max_steer_angle]
         self.yaw_controller = YawController(*yaw_params)
 
         #Velocity PID
         self.pid_vel_linear = PID(PID_VEL_P, PID_VEL_I, PID_VEL_D,
                                   self.decel_limit, self.accel_limit)
 
-        # Velocity filter to smooth velocity changes
-        self.tau_correction = 0.2
-        self.ts_correction = self.delta_t
-        self.low_pass_filter_accel = LowPassFilter(self.tau_correction, self.ts_correction)
 
+        self.steer_pid = PID(PID_STR_P, PID_STR_I, PID_STR_D, -self.max_steer_angle/2, self.max_steer_angle/2)
 
-        self.steer_pid = PID(PID_STR_P, PID_STR_I, PID_STR_D, -self.max_steer_angle/4, self.max_steer_angle/4)
-
-        self.tau_steer_correction = 0.5
-        self.ts_steer_correction = self.delta_t
-        self.low_pass_filter_steer = LowPassFilter(self.tau_steer_correction, self.ts_steer_correction)
-
-
-        # second controller to get throttle signal between 0 and 1
-        self.accel_pid = PID(PID_ACC_P, PID_ACC_I, PID_ACC_D, 0.0, 0.05)
+        #self.tau_steer_correction = 0.5
+        #self.ts_steer_correction = self.delta_t
+        #self.low_pass_filter_steer = LowPassFilter(self.tau_steer_correction, self.ts_steer_correction)
 
         self.last_time = None
         self.last_steering = 0.0
@@ -96,54 +90,53 @@ class Controller(object):
         time = rospy.get_time()
 
 
-        if self.last_time is None:
-            dt = self.delta_t
-        else:
+        if self.last_time is not None:
+
             dt = time - self.last_time
 
-        self.last_time = time
+            self.last_time = time
+
+            # update
+            if linear_current_velocity < 1.0:
+                self.steer_pid.reset()
+                self.pid_vel_linear.reset()
+
+            # use velocity controller compute desired accelaration
+            linear_velocity_error =  (linear_velocity_setpoint - linear_current_velocity)/MAX_V
+            desired_accel = self.pid_vel_linear.step(linear_velocity_error, dt) #self.delta_t)
 
 
-        accel_temp =  (self.linear_past_velocity - linear_current_velocity)/dt
-        self.current_accel = self.low_pass_filter_accel.filt(accel_temp)
 
-        # update
-        self.linear_past_velocity = linear_current_velocity
-
-
-        # use velocity controller compute desired accelaration
-        linear_velocity_error =  (linear_velocity_setpoint - linear_current_velocity)
-        desired_accel = self.pid_vel_linear.step(linear_velocity_error, dt)/dt #self.delta_t)
-
-        # TODO think about emergency brake command
-        if desired_accel > 0.0:
-            if desired_accel < self.accel_limit:
-                throttle = self.accel_pid.step(desired_accel - self.current_accel, dt) #self.delta_t)
-            else:
-                throttle = self.accel_pid.step(self.accel_limit - self.current_accel, dt) #self.delta_t)
-            brake = 0.0
-        else:
-            throttle = 0.0
-            # reset just to be sure
-            self.accel_pid.reset()
-            if abs(desired_accel) > self.brake_deadband:
-                # don't bother braking unless over the deadband level
-                # make sure we do not brake to hard
-                if abs(desired_accel) > abs(self.decel_limit):
-                    brake = abs(self.decel_limit) * self.brake_torque_const
+            if desired_accel > 0.0:
+                #if desired_accel < self.accel_limit:
+                #    throttle = self.accel_limit
+                #else:
+                if desired_accel > 0.2:
+                    throttle = 0.2
                 else:
-                    brake = abs(desired_accel) * self.brake_torque_const
+                    throttle = desired_accel
+                brake = 0.0
+            else:
+                throttle = 0.0
+                # reset just to be sure
+                #self.accel_pid.reset()
+                if abs(desired_accel) > self.brake_deadband:
+                    # don't bother braking unless over the deadband level
+                    # make sure we do not brake to hard
+                    if abs(desired_accel) > abs(self.decel_limit):
+                        brake = abs(self.decel_limit) * self.brake_torque_const
+                    else:
+                        brake = abs(desired_accel) * self.brake_torque_const
 
-        angular_velocity = self.low_pass_filter_steer.filt(angular_velocity_setpoint)
-        steering = self.yaw_controller.get_steering(linear_velocity_setpoint, angular_velocity,
-                                                               linear_current_velocity)
+            steering = self.yaw_controller.get_steering(linear_velocity_setpoint, angular_velocity_setpoint,
+                                                                   linear_current_velocity)
 
-        #rospy.loginfo('####Controller.control: req velocity, req angular velocity, current velocity '
-        #+ str(linear_velocity_setpoint) + ' , ' + str(angular_velocity_setpoint) + ' , ' + str(linear_current_velocity))
-        #rospy.loginfo('####Controller.control: desired acceleration, current acceleration, velocity error '+str(desired_accel)+' , '+str(self.current_accel)+' , '+str(linear_velocity_error) )
-        #rospy.loginfo('####Controller.control: throttle, brake, steering '+str(throttle)+' , '+str(brake) +' , '+ str(steering))
+            steering = self.steer_pid.step(steering-steering_feedback, dt)
 
-        return throttle, brake, steering
+            return throttle, brake, steering
+        else:
+            self.last_time = time
+            return 0.0,0.0,0.0
 
     def reset(self):
         self.pid_vel_linear.reset()

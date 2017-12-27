@@ -232,7 +232,7 @@ class DBWNode(object):
 
     def st_report_cb(self, msg):
         self.steering_feedback = msg.steering_wheel_angle
-        rospy.logwarn("##################STEER FEEDBACK: "+str(self.steering_feedback))
+        #rospy.logwarn("##################STEER FEEDBACK: "+str(self.steering_feedback))
 
     def twist_cmd_cb(self, msg):
         self.current_setpoint = msg
