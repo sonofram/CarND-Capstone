@@ -4,33 +4,35 @@ from yaw_controller import YawController        # Yaw controller provided
 from lowpass import LowPassFilter
 from simplelowpass import SimpleLowPassFilter
 import numpy as np
+import math
 
 # original Udacity constants
 GAS_DENSITY = 2.858
 ONE_MPH = 0.44704
 MAX_V =44.704
 
-# Tuning parameters for throttle/brake PID controller
-#PID_VEL_P = 0.9
-#PID_VEL_I = 0.0005
-#PID_VEL_D = 0.07
+#PID_VEL_P = 1.00
+#PID_VEL_I = 0.01
+#PID_VEL_D = 6.0
 
-PID_VEL_P = 1.0
-PID_VEL_I = 0.01
-PID_VEL_D = 6.0
+PID_VEL_P = 0.00
+PID_VEL_I = 0.00
+PID_VEL_D = 0.00
 
-#PID_ACC_P = 0.4
-#PID_ACC_I = 0.05
-#PID_ACC_D = 0.0
-
-#PID_ACC_P = 0.8
-#PID_ACC_I = 0.05
-#PID_ACC_D = 0.50
-
-PID_STR_P = 0.71
+PID_STR_P = 2.00
 PID_STR_I = 0.00
-PID_STR_D = 6.0
+PID_STR_D = 0.25
 
+#PID_STR_P = 0.70
+#PID_STR_I = 0.00
+#PID_STR_D = 7.0
+
+#PID_STR_P = 0.0
+#PID_STR_I = 0.0
+#PID_STR_D = 0.0
+
+twiddle_on = False #True
+vel_twiddle_on = True
 
 class Controller(object):
     def __init__(self, *args, **kwargs):
@@ -56,6 +58,37 @@ class Controller(object):
         self.current_accel = 0.0
         self.linear_past_velocity = 0.0
 
+
+        #Twiddle parameters
+        self.vel_steps = 100.0
+        self.vel_value_error = 0.0
+        self.vel_best_error = 9999.00
+        self.vel_tolerance = 0.01
+
+        self.vel_p = [PID_VEL_P,PID_VEL_I,PID_VEL_D]
+        self.vel_dp = [1.0,1.0,1.0]
+        self.vel_i = 0.0
+        self.vel_index = None
+        self.vel_rule = None
+        self.vel_twiddle_started = False
+        self.vel_curr_error = 0.0
+
+
+        #Twiddle parameters
+        self.steps = 100.0
+        self.value_error = 0.0
+        self.best_error = 9999.00
+        self.tolerance = 0.02
+
+        self.p = [PID_STR_P,PID_STR_I,PID_STR_D]
+        self.dp = [1.0,1.0,1.0]
+        self.i = 0.0
+        self.index = None
+        self.rule = None
+        self.twiddle_started = False
+        self.curr_error = 0.0
+
+
         #yaw controller
         yaw_params = [self.wheel_base, self.steer_ratio, min_speed,
                       self.max_lat_accel,
@@ -75,6 +108,10 @@ class Controller(object):
 
         self.last_time = None
         self.last_steering = 0.0
+
+        #twiddle parameters
+
+
 
         rospy.loginfo('TwistController: Complete init')
 
@@ -103,16 +140,24 @@ class Controller(object):
 
             # use velocity controller compute desired accelaration
             linear_velocity_error =  (linear_velocity_setpoint - linear_current_velocity)/MAX_V
+            #desired_accel = linear_velocity
             desired_accel = self.pid_vel_linear.step(linear_velocity_error, dt) #self.delta_t)
 
+            ####################Initiate twiddle######################
+            if abs(desired_accel) > 0.0:
+                self.vel_twiddle_started = True
 
+            if vel_twiddle_on is True and self.vel_twiddle_started is True:
+                #cte value captured and passed on for twiddle.
+                self.vel_twiddle(self.pid_vel_linear.getval_error())
 
+            ########################################################
             if desired_accel > 0.0:
                 #if desired_accel < self.accel_limit:
                 #    throttle = self.accel_limit
                 #else:
-                if desired_accel > 0.4: #self.accel_limit:
-                    throttle = 0.4 #self.accel_limit
+                if desired_accel > self.accel_limit:
+                    throttle = self.accel_limit
                 else:
                     throttle = desired_accel
                 brake = 0.0
@@ -131,13 +176,140 @@ class Controller(object):
             steering = self.yaw_controller.get_steering(linear_velocity_setpoint, angular_velocity_setpoint,
                                                                    linear_current_velocity)
 
+
+
+                
+
             steering = self.steer_pid.step(steering-steering_feedback, dt)
             steering = self.low_pass_filter_steer.filt(steering)
 
+            ####################Initiate twiddle######################
+
+            if abs(steering) > 0.0:
+                self.twiddle_started = True
+
+            if twiddle_on is True and self.twiddle_started is True:
+                #cte value captured and passed on for twiddle.
+                self.twiddle(self.steer_pid.getval_error())
+
+            ##########################################################
             return throttle, brake, steering
         else:
             self.last_time = time
             return 0.0,0.0,0.0
+
+    def twiddle(self,cte):
+        #if self.best_error > self.tolerance:
+        if self.i > self.steps:
+            self.curr_error += cte ** 2
+            #rospy.logwarn("steps: "+str(self.i) + '  '+"curr_error: "+str(self.curr_error))
+
+        if self.i == (self.steps * 2):
+            self.curr_error = self.curr_error/(self.steps)
+
+            #reset values
+            self.i = 0
+
+            if self.rule is None:
+                self.rule = 1
+
+            if self.index is None:
+                self.index = 0
+
+            if self.rule == 1:
+                self.p[self.index] += self.dp[self.index]
+                self.rule = 2
+
+            if self.rule == 2:
+                if self.curr_error < self.best_error:
+                    self.best_error = self.curr_error
+                    self.dp[self.index] *= 1.1
+                    self.rule = None
+                else:
+                    self.p[self.index] -= 2 * self.dp[self.index]
+                    self.rule = 3 #Only go to rule=3, if error is not better
+
+            if self.rule == 3:
+                if self.curr_error < self.best_error:
+                    self.best_error = self.curr_error
+                    self.dp[self.index] *= 1.1
+                else:
+                    self.p[self.index] += self.dp[self.index]
+                    self.dp[self.index] *= 0.9
+                self.rule = None
+
+            # If self.rule = None, then , Index need to be
+            # adjust to go for next gain adjustment.
+            if self.rule is None:
+                if self.index == 2:
+                    self.index = 0
+                else:
+                    self.index += 1
+
+            rospy.logwarn("current err: "+str(self.curr_error)+" best_error: " + str(self.best_error)+' param: '+str(self.p))
+
+            self.steer_pid.set(self.p[0],self.p[1],self.p[2])
+            self.curr_error = 0
+
+        self.i += 1.0
+
+
+    def vel_twiddle(self,cte):
+        #if self.best_error > self.tolerance:
+        if self.vel_i > self.vel_steps:
+            self.vel_curr_error += cte ** 2
+            #rospy.logwarn("steps: "+str(self.i) + '  '+"curr_error: "+str(self.curr_error))
+
+        if self.vel_i == (self.vel_steps * 2):
+            self.vel_curr_error = self.vel_curr_error/(self.vel_steps)
+
+            #reset values
+            self.vel_i = 0
+
+            if self.vel_rule is None:
+                self.vel_rule = 1
+
+            if self.vel_index is None:
+                self.vel_index = 0
+
+            if self.vel_rule == 1:
+                self.vel_p[self.vel_index] += self.vel_dp[self.vel_index]
+                self.vel_rule = 2
+
+            if self.vel_rule == 2:
+                if self.vel_curr_error < self.vel_best_error:
+                    self.vel_best_error = self.vel_curr_error
+                    self.vel_dp[self.vel_index] *= 1.1
+                    self.vel_rule = None
+                else:
+                    self.vel_p[self.vel_index] -= 2 * self.vel_dp[self.vel_index]
+                    self.vel_rule = 3 #Only go to rule=3, if error is not better
+
+            if self.vel_rule == 3:
+                if self.vel_curr_error < self.vel_best_error:
+                    self.vel_best_error = self.vel_curr_error
+                    self.vel_dp[self.vel_index] *= 1.1
+                else:
+                    self.vel_p[self.vel_index] += self.vel_dp[self.vel_index]
+                    self.vel_dp[self.vel_index] *= 0.9
+                self.rule = None
+
+            # If self.rule = None, then , Index need to be
+            # adjust to go for next gain adjustment.
+            if self.vel_rule is None:
+                if self.vel_index == 2:
+                    self.vel_index = 0
+                else:
+                    self.vel_index += 1
+
+            rospy.logwarn("current err: "+str(self.vel_curr_error)+" best_error: " + str(self.vel_best_error)+' param: '+str(self.vel_p))
+
+            self.vel_steer_pid.set(self.vel_p[0],self.vel_p[1],self.vel_p[2])
+            self.vel_curr_error = 0
+
+        self.vel_i += 1.0
+
+
 
     def reset(self):
         self.pid_vel_linear.reset()
