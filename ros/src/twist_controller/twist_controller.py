@@ -9,30 +9,19 @@ import math
 # original Udacity constants
 GAS_DENSITY = 2.858
 ONE_MPH = 0.44704
-MAX_V =44.704
+MAX_V = 44.704
 
-#PID_VEL_P = 1.00
-#PID_VEL_I = 0.01
-#PID_VEL_D = 6.0
 
-PID_VEL_P = 0.00
+PID_VEL_P = 1.00
 PID_VEL_I = 0.00
 PID_VEL_D = 0.00
 
-PID_STR_P = 2.00
-PID_STR_I = 0.00
-PID_STR_D = 0.25
+PID_STR_P = 0.71
+PID_STR_I = 0.01
+PID_STR_D = 6.7
 
-#PID_STR_P = 0.70
-#PID_STR_I = 0.00
-#PID_STR_D = 7.0
-
-#PID_STR_P = 0.0
-#PID_STR_I = 0.0
-#PID_STR_D = 0.0
-
-twiddle_on = False #True
-vel_twiddle_on = True
+twiddle_on = False #True #True#True
+vel_twiddle_on = False #True
 
 class Controller(object):
     def __init__(self, *args, **kwargs):
@@ -51,6 +40,7 @@ class Controller(object):
         self.max_throttle_percentage = kwargs['max_throttle_percentage']
         min_speed = 5.0
 
+        #Constant calculated for brake
         self.brake_torque_const = (self.vehicle_mass + self.fuel_capacity * GAS_DENSITY) * self.wheel_radius
 
         #Variable used in control function
@@ -59,7 +49,9 @@ class Controller(object):
         self.linear_past_velocity = 0.0
 
 
-        #Twiddle parameters
+        #Twiddle parameters for optimizing gains for Velocity
+        #Upon observing error on velocity is very low and might
+        #not need PID tuning. therefore, only setup Kp=1.0
         self.vel_steps = 100.0
         self.vel_value_error = 0.0
         self.vel_best_error = 9999.00
@@ -74,7 +66,9 @@ class Controller(object):
         self.vel_curr_error = 0.0
 
 
-        #Twiddle parameters
+        #Twiddle parameters for tuning Steering.
+        #Tried twiddle parameters and not getting tuned due to
+        #local minima
         self.steps = 100.0
         self.value_error = 0.0
         self.best_error = 9999.00
@@ -140,15 +134,17 @@ class Controller(object):
 
             # use velocity controller compute desired accelaration
             linear_velocity_error =  (linear_velocity_setpoint - linear_current_velocity)/MAX_V
-            #desired_accel = linear_velocity
             desired_accel = self.pid_vel_linear.step(linear_velocity_error, dt) #self.delta_t)
+
 
             ####################Initiate twiddle######################
             if abs(desired_accel) > 0.0:
                 self.vel_twiddle_started = True
 
+
             if vel_twiddle_on is True and self.vel_twiddle_started is True:
                 #cte value captured and passed on for twiddle.
+                #rospy.logwarn('vel cte: ' + str(desired_accel))
                 self.vel_twiddle(self.pid_vel_linear.getval_error())
 
             ########################################################
@@ -198,10 +194,15 @@ class Controller(object):
             self.last_time = time
             return 0.0,0.0,0.0
 
+    #Twiddle function implemented as suggested be sebastian.
+    #To continue the loop. Once complete one cyle of tuning,
+    #best_error reset to 999.0 and tuning will contineu along with
+    #PID gains identified by previous cycle.
+    #Each cycle is of 200 loops.
     def twiddle(self,cte):
         #if self.best_error > self.tolerance:
         if self.i > self.steps:
-            self.curr_error += cte ** 2
+            self.curr_error += cte ** 2.0
             #rospy.logwarn("steps: "+str(self.i) + '  '+"curr_error: "+str(self.curr_error))
 
         if self.i == (self.steps * 2):
@@ -226,7 +227,7 @@ class Controller(object):
                     self.dp[self.index] *= 1.1
                     self.rule = None
                 else:
-                    self.p[self.index] -= 2 * self.dp[self.index]
+                    self.p[self.index] -= 2.0 * self.dp[self.index]
                     self.rule = 3 #Only go to rule=3, if error is not better
 
             if self.rule == 3:
@@ -243,17 +244,25 @@ class Controller(object):
             if self.rule is None:
                 if self.index == 2:
                     self.index = 0
+                    if self.curr_error > self.best_error * 1.2:
+                        self.best_error = 999.00 #self.curr_error
                 else:
                     self.index += 1
 
+            self.p[0] = round(self.p[0], 4)
+            self.p[1] = round(self.p[1], 4)
+            self.p[2] = round(self.p[2], 4)
+            rospy.logwarn("index: "+str(self.index)+' rule: '+str(self.rule))
             rospy.logwarn("current err: "+str(self.curr_error)+" best_error: " + str(self.best_error)+' param: '+str(self.p))
 
             self.steer_pid.set(self.p[0],self.p[1],self.p[2])
-            self.curr_error = 0
+
+            self.curr_error = 0.0
 
         self.i += 1.0
 
 
+    #similar like above function. Used for velocity tuning.
     def vel_twiddle(self,cte):
         #if self.best_error > self.tolerance:
         if self.vel_i > self.vel_steps:
@@ -299,12 +308,19 @@ class Controller(object):
             if self.vel_rule is None:
                 if self.vel_index == 2:
                     self.vel_index = 0
+                    if self.vel_curr_error > self.vel_best_error * 1.2:
+                        self.vel_best_error = 999.00 #self.vel_curr_error
+
                 else:
                     self.vel_index += 1
 
-            rospy.logwarn("current err: "+str(self.vel_curr_error)+" best_error: " + str(self.vel_best_error)+' param: '+str(self.vel_p))
+            self.vel_p[0] = round(self.vel_p[0], 4)
+            self.vel_p[1] = round(self.vel_p[1], 4)
+            self.vel_p[2] = round(self.vel_p[2], 4)
+            rospy.logwarn("index: " + str(self.vel_index) + ' rule: ' + str(self.vel_rule))
+            rospy.logwarn("vel_twiddle: current err: "+str(self.vel_curr_error)+" best_error: " + str(self.vel_best_error)+' param: '+str(self.vel_p))
 
-            self.vel_steer_pid.set(self.vel_p[0],self.vel_p[1],self.vel_p[2])
+            self.pid_vel_linear.set(self.vel_p[0],self.vel_p[1],self.vel_p[2])
             self.vel_curr_error = 0
 
         self.vel_i += 1.0
