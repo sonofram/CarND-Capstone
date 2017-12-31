@@ -214,14 +214,12 @@ class DBWNode(object):
         # store the current velocity TwistStamped message
         self.current_vel_linear = msg.twist.linear.x
         rospy.loginfo('DBWNode.current_velocity_cb: current_vel_linear = ' + str(self.current_vel_linear))
-
     def twist_cmd_cb(self, msg):
         # store the received TwistStamped message from the waypoint follower node
         self.required_vel_linear = msg.twist.linear.x
         self.required_vel_angular = msg.twist.angular.z
         rospy.loginfo('DBWNode.twist_cmd_cb: required_vel_linear = ' + str(self.required_vel_linear))
         rospy.loginfo('DBWNode.twist_cmd_cb: required_vel_angular = ' + str(self.required_vel_angular))
-
         # debugging veering issue
         if self.required_vel_angular <> self.last_required_vel_angular:
             rospy.loginfo('DBWNode: received new angular velocity required : ' + str(self.required_vel_angular) + ', count = ' + str(self.count_required_vel_angular))

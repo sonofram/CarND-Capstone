@@ -1,4 +1,3 @@
-
 class SimpleLowPassFilter(object):
     def __init__(self, weight):
         assert .0 <= weight <= 1.

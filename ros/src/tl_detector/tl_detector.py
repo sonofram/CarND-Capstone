@@ -14,18 +14,16 @@ import yaml
 import math
 
 STATE_COUNT_THRESHOLD = 3
-PUBLISH_RATE = 50
-USE_CLASSIFIER = False
-EARLY_WARNING_DISTANCE = 80 # > 11*11/2  2.8*2.8/2
-
+PUBLISH_RATE = 30
+USE_CLASSIFIER = True
+USE_SIMULATER = True
+#EARLY_WARNING_DISTANCE = 80 # > 11*11/2  2.8*2.8/2
 
 class TLDetector(object):
     def __init__(self):
         rospy.init_node('tl_detector')
 	
-	#self.simulator = USE_CLASSIFIER
-	self.simulator = True
-	
+	self.simulator = USE_SIMULATER
 
 	# current pose of the vehicle, composed of position and orientation info
         self.current_pose = None
@@ -42,7 +40,8 @@ class TLDetector(object):
         self.lights = []
 	# early warning distance, it should be depend on the current velocity
 	# In the present version, this is not implemented yet.
-	self.early_warning_distance = EARLY_WARNING_DISTANCE
+	#self.early_warning_distance = EARLY_WARNING_DISTANCE
+	self.early_warning_distance = None
 	# current velocity with initiate value None
 	# it is not used in present version
 	self.current_velocity = None
@@ -90,7 +89,6 @@ class TLDetector(object):
 
 	self.lastCrop = None
 
-
 	rate = rospy.Rate(PUBLISH_RATE)
 
 	while not rospy.is_shutdown():
@@ -120,7 +118,6 @@ class TLDetector(object):
 
 	    rate.sleep()
 
-
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
             location and color
@@ -143,7 +140,6 @@ class TLDetector(object):
 	    return stop_line_index, light_state
 	#if self.stop_line_positions is None:
 	#    return stop_line_index, light_state
-
 
 	##############
 	# In the following, self.current_pose and self.base_waypoints_list are
@@ -187,6 +183,10 @@ class TLDetector(object):
     def base_waypoints_cb(self, waypoints):
         self.base_waypoints_list = waypoints.waypoints
 	self.num_base_waypoints = len(self.base_waypoints_list)
+	if self.num_base_waypoints > 200:
+	    self.early_warning_distance = 80
+	else:
+	    self.early_warning_distance = 20
 
     def traffic_cb(self, msg):
 	# self.lights contains list of traffic lights, including pose and state info
@@ -205,7 +205,6 @@ class TLDetector(object):
 
     #def callback_current_velocity(self, msg):
     #    self.current_velocity = msg
-        
 
     def get_closest_waypoint_index(self, pose):
         """Identifies the closest path waypoint to the given position
@@ -353,7 +352,6 @@ class TLDetector(object):
                 #print "none"
         return gostop
 
-
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
 
         #Get classification
@@ -416,9 +414,6 @@ class TLDetector(object):
 	    # from dbw node parameters I found the decelerate is less than 1
 	    # S = (vt-v0)**2/(2*a), here vt = 0, a = 1
 	    self.early_warning_distance = self.current_velocity*self.current_velocity/2+1
-	
-
-
 
 if __name__ == '__main__':
     try:

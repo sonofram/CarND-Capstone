@@ -17,15 +17,17 @@ Once you have created dbw_node, you will update this node to use the status of t
 Please note that our simulator also provides the exact location of traffic lights and their
 current status in `/vehicle/traffic_lights` message. You can use this message to build this node
 as well as to verify your TL classifier.
+
 ASSUMPTION: 
+
 '''
 
 # The initial value of waypoints we will publish every time. It will be doubled
 # when the value is not suitable
-LOOKAHEAD_WPS_INIT = 200
+LOOKAHEAD_WPS_INIT = 100
 MAX_DECEL = 1.0
 MAX_ACCEL = 1.0
-LOOP = True #False
+LOOP = False
 # rate frequency the loops spin in ROS
 PUBLISH_RATE = 2
 
@@ -54,11 +56,6 @@ class WaypointUpdater(object):
 	# the allowed maximal velocity 
 	## We possibly need to recalculate this if we wish to give test on test lot
 	self.max_velocity = self.kmph2mps(rospy.get_param('/waypoint_loader/velocity'))
-	# previous traffic status, it can be 
-	#	None : not clear
-	#	True : Red/Yellow
-	#	False: Green
-	self.previous_state = None
 	# This is the real lookahead value we are going to use for publishing
 	self.LOOKAHEAD_WPS = LOOKAHEAD_WPS_INIT
 	# flag up if LOOP is True and the car is approaching the destination
@@ -80,22 +77,23 @@ class WaypointUpdater(object):
 
 	#### Main Part ####
 	rate = rospy.Rate(PUBLISH_RATE)
-	n = 0
+	#n = 0
 	while not rospy.is_shutdown():
-	    rospy.loginfo('Updating Round %s', n)
+	    #rospy.logwarn('Updating Round %s', n)
 	    if self.base_waypoints_list is not None and self.current_pose is not None:   
 	        self.update_current_waypoints_list()
 		self.publish(self.current_waypoints_list)
-		self.print_velocities()
-	    n += 1
-	    rospy.loginfo('GO TO SLEEP\n')
+		#self.print_velocities()
+	    #n += 1
+	    #rospy.logwarn('GO TO SLEEP\n')
 	    rate.sleep()
 
 
     def update_current_waypoints_list(self):
 	'''
-	To execute this step, make sure self.base_waypoints_list and 
-	self.current_pose are not None.
+	To execute this step, make sure neither self.base_waypoints_list, nor 
+	self.current_pose is None.
+
 	update the current waypoints list self.current_waypoints_list
 	'''
 
@@ -106,9 +104,9 @@ class WaypointUpdater(object):
 	    closest_id = self.get_closest_waypoint_index(self.current_waypoints_list)
 	    if closest_id == self.LOOKAHEAD_WPS:
 		# meaning the current waypoints was used up with current velocity
-		rospy.loginfo('DANGER! SLOW DOWN!')
+		rospy.logwarn('DANGER! SLOW DOWN!')
 		self.LOOKAHEAD_WPS *= 2
-		rospy.loginfo('Parameter self.LOOKAHEAD_WPS is doubled: %s', self.LOOKAHEAD_WPS)
+		rospy.logwarn('Parameter self.LOOKAHEAD_WPS is doubled: %s', self.LOOKAHEAD_WPS)
 		self.update_from_base_waypoints()	
 	    elif closest_id is not 0:
 		self.update_from_current_waypoints(closest_id)
@@ -117,41 +115,35 @@ class WaypointUpdater(object):
 	stop_line = self.stop_line_index
 	if self.arriving:	
 	    stop_line = self.destination if stop_line < 0 else min(stop_line, self.destination)
-	    rospy.loginfo('Arriving:stop_line = %s', stop_line)
-	rospy.loginfo('self.stop_line_index = %s', stop_line)
+	    #rospy.logwarn('Arriving:stop_line = %s', stop_line)
+	#rospy.logwarn('self.stop_line_index = %s', stop_line)
 
 	#### 3. Update Velocities of Current Waypoints####
 	if stop_line < 0:
-	    rospy.loginfo('>>>GREEN LIGHT or NONE<<<')
+	    #rospy.logwarn('>>>GREEN LIGHT or NONE<<<')
 	    self.accelerate(acceleration=1.0)
-	    #self.previous_state = False
 	else: 
 	    # present: Red/Yellow light detected
 	    if self.arriving:
 		stop_index = self.LOOKAHEAD_WPS-(self.num_base_waypoints+self.waypoint_cursor-stop_line)
 	    else:
 	        stop_index = self.LOOKAHEAD_WPS-(self.waypoint_cursor-stop_line)
-	    rospy.loginfo('stop_index = %s', stop_index)
+	    #rospy.logwarn('stop_index = %s', stop_index)
 	    if 0 <= stop_index < self.LOOKAHEAD_WPS:
-		rospy.loginfo('decelerate is required to use')
+		#rospy.logwarn('decelerate is required to use')
 	        self.decelerate(stop_index)
-	        #self.previous_state = True
 	    elif stop_index >= self.LOOKAHEAD_WPS:
-		rospy.loginfo('stop_index >= self.LOOKAHEAD_WPS')
+		#rospy.logwarn('stop_index >= self.LOOKAHEAD_WPS')
 	        # red/yellow light was detected, but within a safe distance. 
 		self.accelerate(acceleration=0.5) 
-		#self.previous_state = False
 	    else:
-		rospy.loginfo('stop_index < 0')
+		#rospy.logwarn('stop_index < 0')
 		if self.arriving:
 		    # stop anyway
 		    return		
 		self.accelerate(acceleration=1.0)
-	        #self.previous_state = False
 	if self.arriving:
 	    self.print_velocities()
-
-
 
 
     def update_from_current_waypoints(self, closest_id):
@@ -163,7 +155,7 @@ class WaypointUpdater(object):
 	to_index = self.waypoint_cursor + closest_id
 	if to_index >= self.num_base_waypoints:
 	    if not LOOP:
-		rospy.loginfo('ARRIVING!')
+		#rospy.logwarn('ARRIVING!')
 		self.arriving = True
 	        self.destination = self.num_base_waypoints - 1 
 	    del self.current_waypoints_list[:closest_id]
@@ -189,11 +181,10 @@ class WaypointUpdater(object):
 	# define waypoint cursor by self.LOOKAHEAD_WPS
 	self.waypoint_cursor = closest_id + self.LOOKAHEAD_WPS
 	# truncates the cursor if necessary
-	if self.waypoint_cursor >= self.num_base_waypoints:
-	    self.waypoint_cursor = self.num_base_waypoints
+	#if self.waypoint_cursor >= self.num_base_waypoints:
+	#    self.waypoint_cursor = self.num_base_waypoints
 	# initialize self.current_waypoints_list
 	self.current_waypoints_list = self.base_waypoints_list[closest_id:self.waypoint_cursor]
-
 
     def kmph2mps(self, velocity_kmph):
         return (velocity_kmph * 1000.) / (60. * 60.)
@@ -213,18 +204,22 @@ class WaypointUpdater(object):
     def accelerate(self, acceleration=MAX_ACCEL):
 	'''
 	This function is used in acceleration.
+
 	We will acclerate the velocities for self.current_waypoints_list base on
 	the velocity of the first front waypoints of the car and its current
 	velocity. Meanwhile, the updated velocities will be smaller than 
 	self.max_velocity which is abtained from /waypoint_loader/velocity.
+
 	Formular: set acceleration = MAX_ACCEL < 10 m/s**2
 		  v(t)**2 = 2*a*S(t) + v(0)**2
+
 	Note: /dbw_node/accel_limit: 1.0????
 	'''
-	rospy.loginfo('Accelerate is used')
+	#rospy.logwarn('Accelerate is used')
 	waypoint_prev = self.current_waypoints_list[0]
 	v0 = self.get_waypoint_velocity(waypoint_prev)
 	if v0 == 0 or self.current_velocity < 0.5:
+	#if v0 == 0:
 	    v0 = 1.0
 	    self.set_waypoint_velocity(self.current_waypoints_list, 0, v0)
 	dist_prev = 0.0
@@ -239,20 +234,24 @@ class WaypointUpdater(object):
     def decelerate(self, stop_index):
 	'''
 	This function is used in deceleration.
+
 	Assumption: self.current_waypoints_list has been updated and currently
 		    self.stop_line_index >= 0 (Red/Yellow light detected)
 	
 	In this case, we decelerate the car based on the velocity of the first 
 	waypoint in front of the car.
+
 	Fact: in general, the maximal deceleration of a car is in 6 to 8 m/s**2
 	the average deceleration locates in 3-4 m/s**2
 	we control the deceleration so that it is in 1.5-2.5 m/s**2 in order to 
 	produce a better experience.
+
 	:param stop_index: a positive integer between 0 and self.LOOKAHEAD_WPS-1.
+
 	Note: /dbw_node/accel_limit: 1.0
 	      /dbw_node/decel_limit: -5.0
 	'''
-	rospy.loginfo('Decelerate is used')
+	#rospy.logwarn('Decelerate is used')
 	# save the velocity of the first waypoint
 	v0 = self.get_waypoint_velocity(self.current_waypoints_list[0])
 	# calculate the distance from first waypoint to stop_index waypoint
@@ -269,22 +268,21 @@ class WaypointUpdater(object):
 	    # here I assume decel_limit=-4.5
 	    # and I changed self.current_velocity to v0 because all control commands
 	    # are based on predefined waypoints velocities
-	    rospy.loginfo('My God! I cannt STOP in time. Let\'s ACCELERATE.')
+	    #rospy.logwarn('My God! I cannt STOP in time. Let\'s ACCELERATE.')
 	    self.accelerate()
-	elif S < 2.0 and v0 < 2.0:
+	#elif S < 2.0 and v0 < 2.0:
+	elif S < 2.0:
 	    for i in range(len(self.current_waypoints_list)):
        	        self.set_waypoint_velocity(self.current_waypoints_list, i, 0.0)
 	else:
 	    # calculate deceleration by supposing the car slow down from the very
 	    # beginning
 	    deceleration = max(v0**2/(2*S), 0.2)
-	    rospy.loginfo('	deceleration is %s', deceleration)
+	    #rospy.logwarn('	deceleration is %s', deceleration)
 	    # adjust max(,0.5) to max(,0.2) to make the velocities of last several 
 	    # waypoints to 0.
 
 	    self.decelerate_from_beginning(stop_index, deceleration)
-
-
 
     def decelerate_from_beginning(self, stop_index, deceleration):
 	'''
@@ -367,7 +365,7 @@ class WaypointUpdater(object):
 	self.base_waypoints_list = waypoints.waypoints
 	self.num_base_waypoints = len(self.base_waypoints_list)
 	self.LOOKAHEAD_WPS = 100 if self.num_base_waypoints > 100 else 20
-	#self.LOOKAHEAD_WPS = 20
+
 
     def traffic_cb(self, msg):
         self.stop_line_index = msg.data
@@ -419,7 +417,7 @@ class WaypointUpdater(object):
 	velocities = []
 	for waypoint in self.current_waypoints_list[:16]:
 	    velocities.append(self.get_waypoint_velocity(waypoint))
-	rospy.loginfo('       %s', velocities)
+	rospy.logwarn('       %s', velocities)
     #### TEST END ####
 
 
